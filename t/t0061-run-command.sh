@@ -13,11 +13,13 @@ cat >hello-script <<-EOF
 EOF
 
 test_expect_success 'start_command reports ENOENT (slash)' '
-	test-tool run-command start-command-ENOENT ./does-not-exist
+	test-tool run-command start-command-ENOENT ./does-not-exist 2>err &&
+	test_i18ngrep "\./does-not-exist" err
 '
 
 test_expect_success 'start_command reports ENOENT (no slash)' '
-	test-tool run-command start-command-ENOENT does-not-exist
+	test-tool run-command start-command-ENOENT does-not-exist 2>err &&
+	test_i18ngrep "does-not-exist" err
 '
 
 test_expect_success 'run_command can run a command' '
@@ -29,11 +31,20 @@ test_expect_success 'run_command can run a command' '
 	test_must_be_empty err
 '
 
-test_expect_success 'run_command is restricted to PATH' '
+
+test_lazy_prereq RUNS_COMMANDS_FROM_PWD '
+	write_script runs-commands-from-pwd <<-\EOF &&
+	true
+	EOF
+	runs-commands-from-pwd >/dev/null 2>&1
+'
+
+test_expect_success !RUNS_COMMANDS_FROM_PWD 'run_command is restricted to PATH' '
 	write_script should-not-run <<-\EOF &&
 	echo yikes
 	EOF
-	test_must_fail test-tool run-command run-command should-not-run
+	test_must_fail test-tool run-command run-command should-not-run 2>err &&
+	test_i18ngrep "should-not-run" err
 '
 
 test_expect_success !MINGW 'run_command can run a script without a #! line' '

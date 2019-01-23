@@ -107,6 +107,8 @@ static int log_line_range_callback(const struct option *option, const char *arg,
 {
 	struct line_opt_callback_data *data = option->value;
 
+	BUG_ON_OPT_NEG(unset);
+
 	if (!arg)
 		return -1;
 
@@ -639,8 +641,9 @@ int cmd_show(int argc, const char **argv, const char *prefix)
 					diff_get_color_opt(&rev.diffopt, DIFF_COMMIT),
 					name,
 					diff_get_color_opt(&rev.diffopt, DIFF_RESET));
-			read_tree_recursive((struct tree *)o, "", 0, 0, &match_all,
-					show_tree_object, rev.diffopt.file);
+			read_tree_recursive(the_repository, (struct tree *)o, "",
+					    0, 0, &match_all, show_tree_object,
+					    rev.diffopt.file);
 			rev.shown_one = 1;
 			break;
 		case OBJ_COMMIT:
@@ -1009,8 +1012,6 @@ static void show_diffstat(struct rev_info *rev,
 
 	memcpy(&opts, &rev->diffopt, sizeof(opts));
 	opts.output_format = DIFF_FORMAT_SUMMARY | DIFF_FORMAT_DIFFSTAT;
-	opts.stat_width = MAIL_DEFAULT_WRAP;
-
 	diff_setup_done(&opts);
 
 	diff_tree_oid(get_commit_tree_oid(origin),
@@ -1094,9 +1095,18 @@ static void make_cover_letter(struct rev_info *rev, int use_stdout,
 	}
 
 	if (rev->rdiff1) {
+		/*
+		 * Pass minimum required diff-options to range-diff; others
+		 * can be added later if deemed desirable.
+		 */
+		struct diff_options opts;
+		diff_setup(&opts);
+		opts.file = rev->diffopt.file;
+		opts.use_color = rev->diffopt.use_color;
+		diff_setup_done(&opts);
 		fprintf_ln(rev->diffopt.file, "%s", rev->rdiff_title);
 		show_range_diff(rev->rdiff1, rev->rdiff2,
-				rev->creation_factor, 1, &rev->diffopt);
+				rev->creation_factor, 1, &opts);
 	}
 }
 
@@ -1151,6 +1161,8 @@ static int keep_subject = 0;
 
 static int keep_callback(const struct option *opt, const char *arg, int unset)
 {
+	BUG_ON_OPT_NEG(unset);
+	BUG_ON_OPT_ARG(arg);
 	((struct rev_info *)opt->value)->total = -1;
 	keep_subject = 1;
 	return 0;
@@ -1161,6 +1173,7 @@ static int subject_prefix = 0;
 static int subject_prefix_callback(const struct option *opt, const char *arg,
 			    int unset)
 {
+	BUG_ON_OPT_NEG(unset);
 	subject_prefix = 1;
 	((struct rev_info *)opt->value)->subject_prefix = arg;
 	return 0;
@@ -1168,6 +1181,8 @@ static int subject_prefix_callback(const struct option *opt, const char *arg,
 
 static int rfc_callback(const struct option *opt, const char *arg, int unset)
 {
+	BUG_ON_OPT_NEG(unset);
+	BUG_ON_OPT_ARG(arg);
 	return subject_prefix_callback(opt, "RFC PATCH", unset);
 }
 
@@ -1176,6 +1191,7 @@ static int numbered_cmdline_opt = 0;
 static int numbered_callback(const struct option *opt, const char *arg,
 			     int unset)
 {
+	BUG_ON_OPT_ARG(arg);
 	*(int *)opt->value = numbered_cmdline_opt = unset ? 0 : 1;
 	if (unset)
 		auto_number =  0;
@@ -1185,6 +1201,7 @@ static int numbered_callback(const struct option *opt, const char *arg,
 static int no_numbered_callback(const struct option *opt, const char *arg,
 				int unset)
 {
+	BUG_ON_OPT_NEG(unset);
 	return numbered_callback(opt, arg, 1);
 }
 
@@ -1192,6 +1209,7 @@ static int output_directory_callback(const struct option *opt, const char *arg,
 			      int unset)
 {
 	const char **dir = (const char **)opt->value;
+	BUG_ON_OPT_NEG(unset);
 	if (*dir)
 		die(_("Two output directories?"));
 	*dir = arg;
@@ -1508,7 +1526,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    PARSE_OPT_NOARG, numbered_callback },
 		{ OPTION_CALLBACK, 'N', "no-numbered", &numbered, NULL,
 			    N_("use [PATCH] even with multiple patches"),
-			    PARSE_OPT_NOARG, no_numbered_callback },
+			    PARSE_OPT_NOARG | PARSE_OPT_NONEG, no_numbered_callback },
 		OPT_BOOL('s', "signoff", &do_signoff, N_("add Signed-off-by:")),
 		OPT_BOOL(0, "stdout", &use_stdout,
 			    N_("print patches to standard out")),

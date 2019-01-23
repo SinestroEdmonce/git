@@ -1953,8 +1953,6 @@ static int delta_cacheable(unsigned long src_size, unsigned long trg_size,
 	return 0;
 }
 
-#ifndef NO_PTHREADS
-
 /* Protect access to object database */
 static pthread_mutex_t read_mutex;
 #define read_lock()		pthread_mutex_lock(&read_mutex)
@@ -1979,16 +1977,6 @@ static pthread_mutex_t progress_mutex;
  * ahead in the list because they can be stolen and would need
  * progress_mutex for protection.
  */
-#else
-
-#define read_lock()		(void)0
-#define read_unlock()		(void)0
-#define cache_lock()		(void)0
-#define cache_unlock()		(void)0
-#define progress_lock()		(void)0
-#define progress_unlock()	(void)0
-
-#endif
 
 /*
  * Return the size of the object without doing any delta
@@ -2095,9 +2083,9 @@ static int try_delta(struct unpacked *trg, struct unpacked *src,
 			die(_("object %s cannot be read"),
 			    oid_to_hex(&trg_entry->idx.oid));
 		if (sz != trg_size)
-			die(_("object %s inconsistent object length (%lu vs %lu)"),
-			    oid_to_hex(&trg_entry->idx.oid), sz,
-			    trg_size);
+			die(_("object %s inconsistent object length (%"PRIuMAX" vs %"PRIuMAX")"),
+			    oid_to_hex(&trg_entry->idx.oid), (uintmax_t)sz,
+			    (uintmax_t)trg_size);
 		*mem_usage += sz;
 	}
 	if (!src->data) {
@@ -2122,9 +2110,9 @@ static int try_delta(struct unpacked *trg, struct unpacked *src,
 			    oid_to_hex(&src_entry->idx.oid));
 		}
 		if (sz != src_size)
-			die(_("object %s inconsistent object length (%lu vs %lu)"),
-			    oid_to_hex(&src_entry->idx.oid), sz,
-			    src_size);
+			die(_("object %s inconsistent object length (%"PRIuMAX" vs %"PRIuMAX")"),
+			    oid_to_hex(&src_entry->idx.oid), (uintmax_t)sz,
+			    (uintmax_t)src_size);
 		*mem_usage += sz;
 	}
 	if (!src->index) {
@@ -2346,8 +2334,6 @@ static void find_deltas(struct object_entry **list, unsigned *list_size,
 	}
 	free(array);
 }
-
-#ifndef NO_PTHREADS
 
 static void try_to_free_from_threads(size_t size)
 {
@@ -2577,10 +2563,6 @@ static void ll_find_deltas(struct object_entry **list, unsigned list_size,
 	free(p);
 }
 
-#else
-#define ll_find_deltas(l, s, w, d, p)	find_deltas(l, &s, w, d, p)
-#endif
-
 static void add_tag_chain(const struct object_id *oid)
 {
 	struct tag *tag;
@@ -2628,7 +2610,7 @@ static void prepare_pack(int window, int depth)
 	unsigned n;
 
 	if (use_delta_islands)
-		resolve_tree_islands(progress, &to_pack);
+		resolve_tree_islands(the_repository, progress, &to_pack);
 
 	get_object_details();
 
@@ -2733,12 +2715,10 @@ static int git_pack_config(const char *k, const char *v, void *cb)
 		if (delta_search_threads < 0)
 			die(_("invalid number of threads specified (%d)"),
 			    delta_search_threads);
-#ifdef NO_PTHREADS
-		if (delta_search_threads != 1) {
+		if (!HAVE_THREADS && delta_search_threads != 1) {
 			warning(_("no threads support, ignoring %s"), k);
 			delta_search_threads = 0;
 		}
-#endif
 		return 0;
 	}
 	if (!strcmp(k, "pack.indexversion")) {
@@ -2806,9 +2786,11 @@ static void show_object(struct object *obj, const char *name, void *data)
 
 	if (use_delta_islands) {
 		const char *p;
-		unsigned depth = 0;
+		unsigned depth;
 		struct object_entry *ent;
 
+		/* the empty string is a root tree, which is depth 0 */
+		depth = *name ? 1 : 0;
 		for (p = strchr(name, '/'); p; p = strchr(p + 1, '/'))
 			depth++;
 
@@ -3102,16 +3084,22 @@ static void record_recent_commit(struct commit *commit, void *data)
 static void get_object_list(int ac, const char **av)
 {
 	struct rev_info revs;
+	struct setup_revision_opt s_r_opt = {
+		.allow_exclude_promisor_objects = 1,
+	};
 	char line[1000];
 	int flags = 0;
+	int save_warning;
 
 	repo_init_revisions(the_repository, &revs, NULL);
 	save_commit_buffer = 0;
-	revs.allow_exclude_promisor_objects_opt = 1;
-	setup_revisions(ac, av, &revs, NULL);
+	setup_revisions(ac, av, &revs, &s_r_opt);
 
 	/* make sure shallows are read */
 	is_repository_shallow(the_repository);
+
+	save_warning = warn_on_object_refname_ambiguity;
+	warn_on_object_refname_ambiguity = 0;
 
 	while (fgets(line, sizeof(line), stdin) != NULL) {
 		int len = strlen(line);
@@ -3139,11 +3127,13 @@ static void get_object_list(int ac, const char **av)
 			die(_("bad revision '%s'"), line);
 	}
 
+	warn_on_object_refname_ambiguity = save_warning;
+
 	if (use_bitmap_index && !get_object_list_from_bitmap(&revs))
 		return;
 
 	if (use_delta_islands)
-		load_delta_islands();
+		load_delta_islands(the_repository);
 
 	if (prepare_revision_walk(&revs))
 		die(_("revision walk setup failed"));
@@ -3207,6 +3197,9 @@ static int option_parse_index_version(const struct option *opt,
 {
 	char *c;
 	const char *val = arg;
+
+	BUG_ON_OPT_NEG(unset);
+
 	pack_idx_opts.version = strtoul(val, &c, 10);
 	if (pack_idx_opts.version > 2)
 		die(_("unsupported index version %s"), val);
@@ -3253,7 +3246,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 			 N_("similar to --all-progress when progress meter is shown")),
 		{ OPTION_CALLBACK, 0, "index-version", NULL, N_("<version>[,<offset>]"),
 		  N_("write the pack index file in the specified idx format version"),
-		  0, option_parse_index_version },
+		  PARSE_OPT_NONEG, option_parse_index_version },
 		OPT_MAGNITUDE(0, "max-pack-size", &pack_size_limit,
 			      N_("maximum size of each output pack file")),
 		OPT_BOOL(0, "local", &local,
@@ -3402,10 +3395,8 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 	if (!delta_search_threads)	/* --threads=0 means autodetect */
 		delta_search_threads = online_cpus();
 
-#ifdef NO_PTHREADS
-	if (delta_search_threads != 1)
+	if (!HAVE_THREADS && delta_search_threads != 1)
 		warning(_("no threads support, ignoring --threads"));
-#endif
 	if (!pack_to_stdout && !pack_size_limit)
 		pack_size_limit = pack_size_limit_cfg;
 	if (pack_to_stdout && pack_size_limit)
@@ -3481,7 +3472,7 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 		}
 	}
 
-	prepare_packing_data(&to_pack);
+	prepare_packing_data(the_repository, &to_pack);
 
 	if (progress)
 		progress_state = start_progress(_("Enumerating objects"), 0);

@@ -550,24 +550,29 @@ Other incompatible flag pairs:
 BEHAVIORAL DIFFERENCES
 -----------------------
 
- * empty commits:
+There are some subtle differences how the backends behave.
 
-    am-based rebase will drop any "empty" commits, whether the
-    commit started empty (had no changes relative to its parent to
-    start with) or ended empty (all changes were already applied
-    upstream in other commits).
+Empty commits
+~~~~~~~~~~~~~
 
-    merge-based rebase does the same.
+The am backend drops any "empty" commits, regardless of whether the
+commit started empty (had no changes relative to its parent to
+start with) or ended empty (all changes were already applied
+upstream in other commits).
 
-    interactive-based rebase will by default drop commits that
-    started empty and halt if it hits a commit that ended up empty.
-    The `--keep-empty` option exists for interactive rebases to allow
-    it to keep commits that started empty.
+The merge backend does the same.
 
-  * directory rename detection:
+The interactive backend drops commits by default that
+started empty and halts if it hits a commit that ended up empty.
+The `--keep-empty` option exists for the interactive backend to allow
+it to keep commits that started empty.
 
-    merge-based and interactive-based rebases work fine with
-    directory rename detection.  am-based rebases sometimes do not.
+Directory rename detection
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Directory rename heuristics are enabled in the merge and interactive
+backends.  Due to the lack of accurate tree information, directory
+rename detection is disabled in the am backend.
 
 include::merge-strategies.txt[]
 
@@ -975,7 +980,7 @@ when the merge operation did not even start), it is rescheduled immediately.
 
 At this time, the `merge` command will *always* use the `recursive`
 merge strategy for regular merges, and `octopus` for octopus merges,
-strategy, with no way to choose a different one. To work around
+with no way to choose a different one. To work around
 this, an `exec` command can be used to call `git merge` explicitly,
 using the fact that the labels are worktree-local refs (the ref
 `refs/rewritten/onto` would correspond to the label `onto`, for example).

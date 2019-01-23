@@ -557,6 +557,17 @@ static int run_fetch(const char *repo, const char **refspecs)
 static int pull_into_void(const struct object_id *merge_head,
 		const struct object_id *curr_head)
 {
+	if (opt_verify_signatures) {
+		struct commit *commit;
+
+		commit = lookup_commit(the_repository, merge_head);
+		if (!commit)
+			die(_("unable to access commit %s"),
+			    oid_to_hex(merge_head));
+
+		verify_merge_signature(commit, opt_verbosity);
+	}
+
 	/*
 	 * Two-way merge: we treat the index as based on an empty tree,
 	 * and try to fast-forward to HEAD. This ensures we will not lose
@@ -888,7 +899,8 @@ int cmd_pull(int argc, const char **argv, const char *prefix)
 			die(_("Updating an unborn branch with changes added to the index."));
 
 		if (!autostash)
-			require_clean_work_tree(N_("pull with rebase"),
+			require_clean_work_tree(the_repository,
+				N_("pull with rebase"),
 				_("please commit or stash them."), 1, 0);
 
 		if (get_rebase_fork_point(&rebase_fork_point, repo, *refspecs))

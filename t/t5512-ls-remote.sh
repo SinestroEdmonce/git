@@ -260,7 +260,7 @@ test_lazy_prereq GIT_DAEMON '
 # This test spawns a daemon, so run it only if the user would be OK with
 # testing with git-daemon.
 test_expect_success PIPE,JGIT,GIT_DAEMON 'indicate no refs in standards-compliant empty remote' '
-	JGIT_DAEMON_PORT=${JGIT_DAEMON_PORT-${this_test#t}} &&
+	test_set_port JGIT_DAEMON_PORT &&
 	JGIT_DAEMON_PID= &&
 	git init --bare empty.git &&
 	>empty.git/git-daemon-export-ok &&
@@ -300,6 +300,12 @@ test_expect_success 'ls-remote works outside repository' '
 	# lookups).
 	nongit git init --bare dst.git &&
 	nongit git ls-remote dst.git
+'
+
+test_expect_success 'ls-remote --sort fails gracefully outside repository' '
+	# Use a sort key that requires access to the referenced objects.
+	nongit test_must_fail git ls-remote --sort=authordate "$TRASH_DIRECTORY" 2>err &&
+	test_i18ngrep "^fatal: not a git repository, but the field '\''authordate'\'' requires access to object data" err
 '
 
 test_expect_success 'ls-remote patterns work with all protocol versions' '

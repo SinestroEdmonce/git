@@ -350,7 +350,7 @@ static inline int needs_hiding(const char *path)
 		return 0;
 
 	/* We cannot use basename(), as it would remove trailing slashes */
-	mingw_skip_dos_drive_prefix((char **)&path);
+	win32_skip_dos_drive_prefix((char **)&path);
 	if (!*path)
 		return 0;
 
@@ -1028,8 +1028,8 @@ char *mingw_getcwd(char *pointer, int len)
 }
 
 /*
- * See http://msdn2.microsoft.com/en-us/library/17w5ykft(vs.71).aspx
- * (Parsing C++ Command-Line Arguments)
+ * See "Parsing C++ Command-Line Arguments" at Microsoft's Docs:
+ * https://docs.microsoft.com/en-us/cpp/cpp/parsing-cpp-command-line-arguments
  */
 static const char *quote_arg(const char *arg)
 {
@@ -2211,24 +2211,12 @@ int mingw_raise(int sig)
 
 int link(const char *oldpath, const char *newpath)
 {
-	typedef BOOL (WINAPI *T)(LPCWSTR, LPCWSTR, LPSECURITY_ATTRIBUTES);
-	static T create_hard_link = NULL;
 	wchar_t woldpath[MAX_PATH], wnewpath[MAX_PATH];
 	if (xutftowcs_path(woldpath, oldpath) < 0 ||
 		xutftowcs_path(wnewpath, newpath) < 0)
 		return -1;
 
-	if (!create_hard_link) {
-		create_hard_link = (T) GetProcAddress(
-			GetModuleHandle("kernel32.dll"), "CreateHardLinkW");
-		if (!create_hard_link)
-			create_hard_link = (T)-1;
-	}
-	if (create_hard_link == (T)-1) {
-		errno = ENOSYS;
-		return -1;
-	}
-	if (!create_hard_link(wnewpath, woldpath, NULL)) {
+	if (!CreateHardLinkW(wnewpath, woldpath, NULL)) {
 		errno = err_win_to_posix(GetLastError());
 		return -1;
 	}
@@ -2285,33 +2273,6 @@ pid_t waitpid(pid_t pid, int *status, int options)
 
 	errno = EINVAL;
 	return -1;
-}
-
-int mingw_skip_dos_drive_prefix(char **path)
-{
-	int ret = has_dos_drive_prefix(*path);
-	*path += ret;
-	return ret;
-}
-
-int mingw_offset_1st_component(const char *path)
-{
-	char *pos = (char *)path;
-
-	/* unc paths */
-	if (!skip_dos_drive_prefix(&pos) &&
-			is_dir_sep(pos[0]) && is_dir_sep(pos[1])) {
-		/* skip server name */
-		pos = strpbrk(pos + 2, "\\/");
-		if (!pos)
-			return 0; /* Error: malformed unc path */
-
-		do {
-			pos++;
-		} while (*pos && !is_dir_sep(*pos));
-	}
-
-	return pos + is_dir_sep(*pos) - path;
 }
 
 int xutftowcsn(wchar_t *wcs, const char *utfs, size_t wcslen, int utflen)

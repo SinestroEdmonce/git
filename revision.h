@@ -32,6 +32,9 @@
 #define TRACK_LINEAR	(1u<<26)
 #define ALL_REV_FLAGS	(((1u<<11)-1) | NOT_USER_GIVEN | TRACK_LINEAR)
 
+#define TOPO_WALK_EXPLORED	(1u<<27)
+#define TOPO_WALK_INDEGREE	(1u<<28)
+
 #define DECORATE_SHORT_REFS	1
 #define DECORATE_FULL_REFS	2
 
@@ -63,6 +66,8 @@ struct rev_cmdline_info {
 #define REVISION_WALK_WALK 0
 #define REVISION_WALK_NO_WALK_SORTED 1
 #define REVISION_WALK_NO_WALK_UNSORTED 2
+
+struct topo_walk_info;
 
 struct rev_info {
 	/* Starting list */
@@ -156,7 +161,6 @@ struct rev_info {
 			do_not_die_on_missing_tree:1,
 
 			/* for internal use only */
-			allow_exclude_promisor_objects_opt:1,
 			exclude_promisor_objects:1;
 
 	/* Diff flags */
@@ -270,6 +274,8 @@ struct rev_info {
 	const char *break_bar;
 
 	struct revision_sources *sources;
+
+	struct topo_walk_info *topo_walk_info;
 };
 
 int ref_excluded(struct string_list *, const char *path);
@@ -290,7 +296,8 @@ struct setup_revision_opt {
 	const char *def;
 	void (*tweak)(struct rev_info *, struct setup_revision_opt *);
 	const char *submodule;	/* TODO: drop this and use rev_info->repo */
-	int assume_dashdash;
+	unsigned int	assume_dashdash:1,
+			allow_exclude_promisor_objects:1;
 	unsigned revarg_opt;
 };
 

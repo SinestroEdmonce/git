@@ -1,5 +1,5 @@
-Git Release Notes
-=================
+Git 2.20 Release Notes
+======================
 
 Backward Compatibility Notes
 ----------------------------
@@ -137,11 +137,6 @@ UI, Workflows & Features
    command line, or setting sendemail.suppresscc configuration
    variable to "misc-by", can be used to disable this behaviour.
 
- * Developer builds now uses -Wunused-function compilation option.
-
- * One of our CI tests to run with "unusual/experimental/random"
-   settings now also uses commit-graph and midx.
-
  * "git mergetool" learned to take the "--[no-]gui" option, just like
    "git difftool" does.
 
@@ -173,8 +168,22 @@ UI, Workflows & Features
    each other.
    (merge e5bbe09e88 nd/wildmatch-double-asterisk later to maint).
 
+ * The "--no-patch" option, which can be used to get a high-level
+   overview without the actual line-by-line patch difference shown, of
+   the "range-diff" command was earlier broken, which has been
+   corrected.
+
+ * The recently merged "rebase in C" has an escape hatch to use the
+   scripted version when necessary, but it hasn't been documented,
+   which has been corrected.
+
 
 Performance, Internal Implementation, Development Support etc.
+
+ * Developer builds now use -Wunused-function compilation option.
+
+ * One of our CI tests to run with "unusual/experimental/random"
+   settings now also uses commit-graph and midx.
 
  * When there are too many packfiles in a repository (which is not
    recommended), looking up an object in these would require
@@ -249,8 +258,8 @@ Performance, Internal Implementation, Development Support etc.
    used during tests are getting renamed for consistency.
    (merge 4231d1ba99 bp/rename-test-env-var later to maint).
 
- * A new extension to the index file has been introduced, which allows
-   the index file to be read in parallel for performance.
+ * A pair of new extensions to the index file have been introduced.
+   They allow the index file to be read in parallel for performance.
 
  * The oidset API was built on top of the oidmap API which in turn is
    on the hashmap API.  Replace the implementation to build on top of
@@ -296,7 +305,7 @@ Performance, Internal Implementation, Development Support etc.
 
  * The overly large Documentation/config.txt file have been split into
    million little pieces.  This potentially allows each individual piece
-   included into the manual page of the command it affects more easily.
+   to be included into the manual page of the command it affects more easily.
 
  * Replace three string-list instances used as look-up tables in "git
    fetch" with hashmaps.
@@ -331,6 +340,60 @@ Performance, Internal Implementation, Development Support etc.
 
  * The support for format-patch (and send-email) by the command-line
    completion script (in contrib/) has been simplified a bit.
+
+ * The revision walker machinery learned to take advantage of the
+   commit generation numbers stored in the commit-graph file.
+
+ * The codebase has been cleaned up to reduce "#ifndef NO_PTHREADS".
+
+ * The way -lcurl library gets linked has been simplified by taking
+   advantage of the fact that we can just ask curl-config command how.
+
+ * Various functions have been audited for "-Wunused-parameter" warnings
+   and bugs in them got fixed.
+
+ * A sanity check for start-up sequence has been added in the config
+   API codepath.
+
+ * The build procedure to link for fuzzing test has been made
+   customizable with a new Makefile variable.
+
+ * The way "git rebase" parses and forwards the command line options
+   meant for underlying "git am" has been revamped, which fixed for
+   options with parameters that were not passed correctly.
+
+ * Our testing framework uses a special i18n "poisoned localization"
+   feature to find messages that ought to stay constant but are
+   incorrectly marked to be translated.  This feature has been made
+   into a runtime option (it used to be a compile-time option).
+
+ * "git push" used to check ambiguities between object-names and
+   refnames while processing the list of refs' old and new values,
+   which was unnecessary (as it knew that it is feeding raw object
+   names).  This has been optimized out.
+
+ * The xcurl_off_t() helper function is used to cast size_t to
+   curl_off_t, but some compilers gave warnings against the code to
+   ensure the casting is done without wraparound, when size_t is
+   narrower than curl_off_t.  This warning has been squelched.
+
+ * Code preparation to replace ulong vars with size_t vars where
+   appropriate continues.
+
+ * The "test installed Git" mode of our test suite has been updated to
+   work better.
+
+ * A coding convention around the Coccinelle semantic patches to have
+   two classes to ease code migration process has been proposed and
+   its support has been added to the Makefile.
+
+ * The "container" mode of TravisCI is going away.  Our .travis.yml
+   file is getting prepared for the transition.
+   (merge 32ee384be8 ss/travis-ci-force-vm-mode later to maint).
+
+ * Our test scripts can now take the '-V' option as a synonym for the
+   '--verbose-log' option.
+   (merge a5f52c6dab sg/test-verbose-log later to maint).
 
 
 Fixes since v2.19
@@ -489,14 +552,6 @@ Fixes since v2.19
    didn't make much sense.  This has been corrected.
    (merge 669b1d2aae md/exclude-promisor-objects-fix later to maint).
 
- * The "container" mode of TravisCI is going away.  Our .travis.yml
-   file is getting prepared for the transition.
-   (merge 32ee384be8 ss/travis-ci-force-vm-mode later to maint).
-
- * Our test scripts can now take the '-V' option as a synonym for the
-   '--verbose-log' option.
-   (merge a5f52c6dab sg/test-verbose-log later to maint).
-
  * A regression in Git 2.12 era made "git fsck" fall into an infinite
    loop while processing truncated loose objects.
    (merge 18ad13e5b2 jk/detect-truncated-zlib-input later to maint).
@@ -523,7 +578,7 @@ Fixes since v2.19
 
  * "git rev-parse --exclude=* --branches --branches"  (i.e. first
    saying "add only things that do not match '*' out of all branches"
-   and then adding all branches, without any exclusion this time")
+   and then adding all branches, without any exclusion this time)
    worked as expected, but "--exclude=* --all --all" did not work the
    same way, which has been fixed.
    (merge 5221048092 ag/rev-parse-all-exclude-fix later to maint).
@@ -543,6 +598,62 @@ Fixes since v2.19
  * Pathspec matching against a tree object were buggy when negative
    pathspec elements were involved, which has been fixed.
    (merge b7845cebc0 nd/tree-walk-path-exclusion later to maint).
+
+ * "git merge" and "git pull" that merges into an unborn branch used
+   to completely ignore "--verify-signatures", which has been
+   corrected.
+   (merge 01a31f3bca jk/verify-sig-merge-into-void later to maint).
+
+ * "git rebase --autostash" did not correctly re-attach the HEAD at times.
+
+ * "rev-parse --exclude=<pattern> --branches=<pattern>" etc. did not
+   quite work, which has been corrected.
+   (merge 9ab9b5df0e ra/rev-parse-exclude-glob later to maint).
+
+ * When editing a patch in a "git add -i" session, a hunk could be
+   made to no-op.  The "git apply" program used to reject a patch with
+   such a no-op hunk to catch user mistakes, but it is now updated to
+   explicitly allow a no-op hunk in an edited patch.
+   (merge 22cb3835b9 js/apply-recount-allow-noop later to maint).
+
+ * The URL to an MSDN page in a comment has been updated.
+   (merge 2ef2ae2917 js/mingw-msdn-url later to maint).
+
+ * "git ls-remote --sort=<thing>" can feed an object that is not yet
+   available into the comparison machinery and segfault, which has
+   been corrected to check such a request upfront and reject it.
+
+ * When "git bundle" aborts due to an empty commit ranges
+   (i.e. resulting in an empty pack), it left a file descriptor to an
+   lockfile open, which resulted in leftover lockfile on Windows where
+   you cannot remove a file with an open file descriptor.  This has
+   been corrected.
+   (merge 2c8ee1f53c jk/close-duped-fd-before-unlock-for-bundle later to maint).
+
+ * "git format-patch --stat=<width>" can be used to specify the width
+   used by the diffstat (shown in the cover letter).
+   (merge 284aeb7e60 nd/format-patch-cover-letter-stat-width later to maint).
+
+ * The way .git/index and .git/sharedindex* files were initially
+   created gave these files different perm bits until they were
+   adjusted for shared repository settings.  This was made consistent.
+   (merge c9d6c78870 cc/shared-index-permbits later to maint).
+
+ * "git rebase --stat" to transplant a piece of history onto a totally
+   unrelated history were not working before and silently showed wrong
+   result.  With the recent reimplementation in C, it started to instead
+   die with an error message, as the original logic was not prepared
+   to cope with this case.  This has now been fixed.
+
+ * The advice message to tell the user to migrate an existing graft
+   file to the replace system when a graft file was read was shown
+   even when "git replace --convert-graft-file" command, which is the
+   way the message suggests to use, was running, which made little
+   sense.
+   (merge 8821e90a09 ab/replace-graft-with-replace-advice later to maint).
+
+ * "git diff --raw" lost ellipses to adjust the output columns for
+   some time now, but the documentation still showed them.
 
  * Code cleanup, docfix, build fix, etc.
    (merge 96a7501aad ts/doc-build-manpage-xsl-quietly later to maint).
@@ -583,3 +694,7 @@ Fixes since v2.19
    (merge 3063477445 tb/char-may-be-unsigned later to maint).
    (merge 8c64bc9420 sg/test-rebase-editor-fix later to maint).
    (merge 71571cd7d6 ma/sequencer-do-reset-saner-loop-termination later to maint).
+   (merge 9a4cb8781e cb/notes-freeing-always-null-fix later to maint).
+   (merge 3006f5ee16 ma/reset-doc-rendering-fix later to maint).
+   (merge 4c2eb06419 sg/daemon-test-signal-fix later to maint).
+   (merge d27525e519 ss/msvc-strcasecmp later to maint).

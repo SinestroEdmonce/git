@@ -460,8 +460,13 @@ int show_range_diff(const char *range1, const char *range2,
 		struct diff_options opts;
 		struct strbuf indent = STRBUF_INIT;
 
-		memcpy(&opts, diffopt, sizeof(opts));
-		opts.output_format = DIFF_FORMAT_PATCH;
+		if (diffopt)
+			memcpy(&opts, diffopt, sizeof(opts));
+		else
+			diff_setup(&opts);
+
+		if (!opts.output_format)
+			opts.output_format = DIFF_FORMAT_PATCH;
 		opts.flags.suppress_diff_headers = 1;
 		opts.flags.dual_color_diffed_diffs = dual_color;
 		opts.output_prefix = output_prefix_cb;

@@ -1131,6 +1131,8 @@ static void deinit_submodule(const char *path, const char *prefix,
 		if (!(flags & OPT_QUIET))
 			printf(format, displaypath);
 
+		submodule_unset_core_worktree(sub);
+
 		strbuf_release(&sb_rm);
 	}
 
@@ -1265,19 +1267,20 @@ struct submodule_alternate_setup {
 	SUBMODULE_ALTERNATE_ERROR_IGNORE, NULL }
 
 static int add_possible_reference_from_superproject(
-		struct alternate_object_database *alt, void *sas_cb)
+		struct object_directory *odb, void *sas_cb)
 {
 	struct submodule_alternate_setup *sas = sas_cb;
+	size_t len;
 
 	/*
 	 * If the alternate object store is another repository, try the
 	 * standard layout with .git/(modules/<name>)+/objects
 	 */
-	if (ends_with(alt->path, "/objects")) {
+	if (strip_suffix(odb->path, "/objects", &len)) {
 		char *sm_alternate;
 		struct strbuf sb = STRBUF_INIT;
 		struct strbuf err = STRBUF_INIT;
-		strbuf_add(&sb, alt->path, strlen(alt->path) - strlen("objects"));
+		strbuf_add(&sb, odb->path, len);
 
 		/*
 		 * We need to end the new path with '/' to mark it as a dir,
@@ -1285,7 +1288,7 @@ static int add_possible_reference_from_superproject(
 		 * as the last part of a missing submodule reference would
 		 * be taken as a file name.
 		 */
-		strbuf_addf(&sb, "modules/%s/", sas->submodule_name);
+		strbuf_addf(&sb, "/modules/%s/", sas->submodule_name);
 
 		sm_alternate = compute_alternate_path(sb.buf, &err);
 		if (sm_alternate) {
@@ -1551,7 +1554,7 @@ struct submodule_update_clone {
 #define SUBMODULE_UPDATE_CLONE_INIT {0, MODULE_LIST_INIT, 0, \
 	SUBMODULE_UPDATE_STRATEGY_INIT, 0, 0, -1, STRING_LIST_INIT_DUP, 0, \
 	NULL, NULL, NULL, \
-	NULL, 0, 0, 0, NULL, 0, 0, 0}
+	NULL, 0, 0, 0, NULL, 0, 0, 1}
 
 
 static void next_submodule_warn_missing(struct submodule_update_clone *suc,
@@ -2045,7 +2048,7 @@ static int ensure_core_worktree(int argc, const char **argv, const char *prefix)
 	struct repository subrepo;
 
 	if (argc != 2)
-		BUG("submodule--helper connect-gitdir-workingtree <name> <path>");
+		BUG("submodule--helper ensure-core-worktree <path>");
 
 	path = argv[1];
 

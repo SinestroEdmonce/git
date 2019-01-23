@@ -1748,7 +1748,7 @@ static int parse_fragment(struct apply_state *state,
 	}
 	if (oldlines || newlines)
 		return -1;
-	if (!deleted && !added)
+	if (!patch->recount && !deleted && !added)
 		return -1;
 
 	fragment->leading = leading;
@@ -3352,7 +3352,8 @@ static int checkout_target(struct index_state *istate,
 
 	costate.refresh_cache = 1;
 	costate.istate = istate;
-	if (checkout_entry(ce, &costate, NULL) || lstat(ce->name, st))
+	if (checkout_entry(ce, &costate, NULL, NULL) ||
+	    lstat(ce->name, st))
 		return error(_("cannot checkout %s"), ce->name);
 	return 0;
 }
@@ -4772,6 +4773,9 @@ static int apply_option_parse_exclude(const struct option *opt,
 				      const char *arg, int unset)
 {
 	struct apply_state *state = opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
 	add_name_limit(state, arg, 1);
 	return 0;
 }
@@ -4780,6 +4784,9 @@ static int apply_option_parse_include(const struct option *opt,
 				      const char *arg, int unset)
 {
 	struct apply_state *state = opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
 	add_name_limit(state, arg, 0);
 	state->has_include = 1;
 	return 0;
@@ -4790,6 +4797,9 @@ static int apply_option_parse_p(const struct option *opt,
 				int unset)
 {
 	struct apply_state *state = opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
 	state->p_value = atoi(arg);
 	state->p_value_known = 1;
 	return 0;
@@ -4799,6 +4809,9 @@ static int apply_option_parse_space_change(const struct option *opt,
 					   const char *arg, int unset)
 {
 	struct apply_state *state = opt->value;
+
+	BUG_ON_OPT_ARG(arg);
+
 	if (unset)
 		state->ws_ignore_action = ignore_ws_none;
 	else
@@ -4810,9 +4823,12 @@ static int apply_option_parse_whitespace(const struct option *opt,
 					 const char *arg, int unset)
 {
 	struct apply_state *state = opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
 	state->whitespace_option = arg;
 	if (parse_whitespace_option(state, arg))
-		exit(1);
+		return -1;
 	return 0;
 }
 
@@ -4820,6 +4836,9 @@ static int apply_option_parse_directory(const struct option *opt,
 					const char *arg, int unset)
 {
 	struct apply_state *state = opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
 	strbuf_reset(&state->root);
 	strbuf_addstr(&state->root, arg);
 	strbuf_complete(&state->root, '/');
@@ -4939,10 +4958,10 @@ int apply_parse_options(int argc, const char **argv,
 	struct option builtin_apply_options[] = {
 		{ OPTION_CALLBACK, 0, "exclude", state, N_("path"),
 			N_("don't apply changes matching the given path"),
-			0, apply_option_parse_exclude },
+			PARSE_OPT_NONEG, apply_option_parse_exclude },
 		{ OPTION_CALLBACK, 0, "include", state, N_("path"),
 			N_("apply changes matching the given path"),
-			0, apply_option_parse_include },
+			PARSE_OPT_NONEG, apply_option_parse_include },
 		{ OPTION_CALLBACK, 'p', NULL, state, N_("num"),
 			N_("remove <num> leading slashes from traditional diff paths"),
 			0, apply_option_parse_p },

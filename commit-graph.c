@@ -34,7 +34,6 @@
 #define GRAPH_OID_LEN GRAPH_OID_LEN_SHA1
 
 #define GRAPH_OCTOPUS_EDGES_NEEDED 0x80000000
-#define GRAPH_PARENT_MISSING 0x7fffffff
 #define GRAPH_EDGE_LAST_MASK 0x7fffffff
 #define GRAPH_PARENT_NONE 0x70000000
 
@@ -230,8 +229,7 @@ static void prepare_commit_graph_one(struct repository *r, const char *obj_dir)
  */
 static int prepare_commit_graph(struct repository *r)
 {
-	struct alternate_object_database *alt;
-	char *obj_dir;
+	struct object_directory *odb;
 	int config_value;
 
 	if (r->objects->commit_graph_attempted)
@@ -252,13 +250,11 @@ static int prepare_commit_graph(struct repository *r)
 	if (!commit_graph_compatible(r))
 		return 0;
 
-	obj_dir = r->objects->objectdir;
-	prepare_commit_graph_one(r, obj_dir);
 	prepare_alt_odb(r);
-	for (alt = r->objects->alt_odb_list;
-	     !r->objects->commit_graph && alt;
-	     alt = alt->next)
-		prepare_commit_graph_one(r, alt->path);
+	for (odb = r->objects->odb;
+	     !r->objects->commit_graph && odb;
+	     odb = odb->next)
+		prepare_commit_graph_one(r, odb->path);
 	return !!r->objects->commit_graph;
 }
 
@@ -496,7 +492,9 @@ static void write_graph_chunk_data(struct hashfile *f, int hash_len,
 					      commit_to_sha1);
 
 			if (edge_value < 0)
-				edge_value = GRAPH_PARENT_MISSING;
+				BUG("missing parent %s for commit %s",
+				    oid_to_hex(&parent->item->object.oid),
+				    oid_to_hex(&(*list)->object.oid));
 		}
 
 		hashwrite_be32(f, edge_value);
@@ -514,7 +512,9 @@ static void write_graph_chunk_data(struct hashfile *f, int hash_len,
 					      nr_commits,
 					      commit_to_sha1);
 			if (edge_value < 0)
-				edge_value = GRAPH_PARENT_MISSING;
+				BUG("missing parent %s for commit %s",
+				    oid_to_hex(&parent->item->object.oid),
+				    oid_to_hex(&(*list)->object.oid));
 		}
 
 		hashwrite_be32(f, edge_value);
@@ -567,7 +567,9 @@ static void write_graph_chunk_large_edges(struct hashfile *f,
 						  commit_to_sha1);
 
 			if (edge_value < 0)
-				edge_value = GRAPH_PARENT_MISSING;
+				BUG("missing parent %s for commit %s",
+				    oid_to_hex(&parent->item->object.oid),
+				    oid_to_hex(&(*list)->object.oid));
 			else if (!parent->next)
 				edge_value |= GRAPH_LAST_EDGE;
 
@@ -641,26 +643,29 @@ static void add_missing_parents(struct packed_oid_list *oids, struct commit *com
 
 static void close_reachable(struct packed_oid_list *oids, int report_progress)
 {
-	int i;
+	int i, j;
 	struct commit *commit;
 	struct progress *progress = NULL;
-	int j = 0;
 
 	if (report_progress)
 		progress = start_delayed_progress(
-			_("Annotating commits in commit graph"), 0);
+			_("Loading known commits in commit graph"), j = 0);
 	for (i = 0; i < oids->nr; i++) {
 		display_progress(progress, ++j);
 		commit = lookup_commit(the_repository, &oids->list[i]);
 		if (commit)
 			commit->object.flags |= UNINTERESTING;
 	}
+	stop_progress(&progress);
 
 	/*
 	 * As this loop runs, oids->nr may grow, but not more
 	 * than the number of missing commits in the reachable
 	 * closure.
 	 */
+	if (report_progress)
+		progress = start_delayed_progress(
+			_("Expanding reachable commits in commit graph"), j = 0);
 	for (i = 0; i < oids->nr; i++) {
 		display_progress(progress, ++j);
 		commit = lookup_commit(the_repository, &oids->list[i]);
@@ -668,7 +673,11 @@ static void close_reachable(struct packed_oid_list *oids, int report_progress)
 		if (commit && !parse_commit(commit))
 			add_missing_parents(oids, commit);
 	}
+	stop_progress(&progress);
 
+	if (report_progress)
+		progress = start_delayed_progress(
+			_("Clearing commit marks in commit graph"), j = 0);
 	for (i = 0; i < oids->nr; i++) {
 		display_progress(progress, ++j);
 		commit = lookup_commit(the_repository, &oids->list[i]);
@@ -864,7 +873,7 @@ void write_commit_graph(const char *obj_dir,
 			count_distinct++;
 	}
 
-	if (count_distinct >= GRAPH_PARENT_MISSING)
+	if (count_distinct >= GRAPH_EDGE_LAST_MASK)
 		die(_("the commit graph format cannot write %d commits"), count_distinct);
 
 	commits.nr = 0;
@@ -891,7 +900,7 @@ void write_commit_graph(const char *obj_dir,
 	}
 	num_chunks = num_extra_edges ? 4 : 3;
 
-	if (commits.nr >= GRAPH_PARENT_MISSING)
+	if (commits.nr >= GRAPH_EDGE_LAST_MASK)
 		die(_("too many commits to write graph"));
 
 	compute_generation_numbers(&commits, report_progress);

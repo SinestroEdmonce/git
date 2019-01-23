@@ -418,14 +418,14 @@ test_declared_prereq () {
 test_verify_prereq () {
 	test -z "$test_prereq" ||
 	expr >/dev/null "$test_prereq" : '[A-Z0-9_,!]*$' ||
-	error "bug in the test script: '$test_prereq' does not look like a prereq"
+	BUG "'$test_prereq' does not look like a prereq"
 }
 
 test_expect_failure () {
 	test_start_
 	test "$#" = 3 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 2 ||
-	error "bug in the test script: not 2 or 3 parameters to test-expect-failure"
+	BUG "not 2 or 3 parameters to test-expect-failure"
 	test_verify_prereq
 	export test_prereq
 	if ! test_skip "$@"
@@ -445,7 +445,7 @@ test_expect_success () {
 	test_start_
 	test "$#" = 3 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 2 ||
-	error "bug in the test script: not 2 or 3 parameters to test-expect-success"
+	BUG "not 2 or 3 parameters to test-expect-success"
 	test_verify_prereq
 	export test_prereq
 	if ! test_skip "$@"
@@ -472,7 +472,7 @@ test_expect_success () {
 test_external () {
 	test "$#" = 4 && { test_prereq=$1; shift; } || test_prereq=
 	test "$#" = 3 ||
-	error >&5 "bug in the test script: not 3 or 4 parameters to test_external"
+	BUG "not 3 or 4 parameters to test_external"
 	descr="$1"
 	shift
 	test_verify_prereq
@@ -613,7 +613,7 @@ test_path_is_missing () {
 test_line_count () {
 	if test $# != 3
 	then
-		error "bug in the test script: not 3 parameters to test_line_count"
+		BUG "not 3 parameters to test_line_count"
 	elif ! test $(wc -l <"$3") "$1" "$2"
 	then
 		echo "test_line_count: line count for $3 !$1 $2"
@@ -778,31 +778,30 @@ test_cmp_bin() {
 
 # Use this instead of test_cmp to compare files that contain expected and
 # actual output from git commands that can be translated.  When running
-# under GETTEXT_POISON this pretends that the command produced expected
+# under GIT_TEST_GETTEXT_POISON this pretends that the command produced expected
 # results.
 test_i18ncmp () {
-	test -n "$GETTEXT_POISON" || test_cmp "$@"
+	! test_have_prereq C_LOCALE_OUTPUT || test_cmp "$@"
 }
 
 # Use this instead of "grep expected-string actual" to see if the
 # output from a git command that can be translated either contains an
 # expected string, or does not contain an unwanted one.  When running
-# under GETTEXT_POISON this pretends that the command produced expected
+# under GIT_TEST_GETTEXT_POISON this pretends that the command produced expected
 # results.
 test_i18ngrep () {
 	eval "last_arg=\${$#}"
 
 	test -f "$last_arg" ||
-	error "bug in the test script: test_i18ngrep requires a file" \
-	      "to read as the last parameter"
+	BUG "test_i18ngrep requires a file to read as the last parameter"
 
 	if test $# -lt 2 ||
 	   { test "x!" = "x$1" && test $# -lt 3 ; }
 	then
-		error "bug in the test script: too few parameters to test_i18ngrep"
+		BUG "too few parameters to test_i18ngrep"
 	fi
 
-	if test -n "$GETTEXT_POISON"
+	if test_have_prereq !C_LOCALE_OUTPUT
 	then
 		# pretend success
 		return 0
@@ -854,9 +853,23 @@ test_must_be_empty () {
 
 # Tests that its two parameters refer to the same revision
 test_cmp_rev () {
-	git rev-parse --verify "$1" >expect.rev &&
-	git rev-parse --verify "$2" >actual.rev &&
-	test_cmp expect.rev actual.rev
+	if test $# != 2
+	then
+		error "bug in the test script: test_cmp_rev requires two revisions, but got $#"
+	else
+		local r1 r2
+		r1=$(git rev-parse --verify "$1") &&
+		r2=$(git rev-parse --verify "$2") &&
+		if test "$r1" != "$r2"
+		then
+			cat >&4 <<-EOF
+			error: two revisions point to different objects:
+			  '$1': $r1
+			  '$2': $r2
+			EOF
+			return 1
+		fi
+	fi
 }
 
 # Print a sequence of integers in increasing order, either with
@@ -871,7 +884,7 @@ test_seq () {
 	case $# in
 	1)	set 1 "$@" ;;
 	2)	;;
-	*)	error "bug in the test script: not 1 or 2 parameters to test_seq" ;;
+	*)	BUG "not 1 or 2 parameters to test_seq" ;;
 	esac
 	test_seq_counter__=$1
 	while test "$test_seq_counter__" -le "$2"
@@ -909,7 +922,7 @@ test_when_finished () {
 	# doing so on Bash is better than nothing (the test will
 	# silently pass on other shells).
 	test "${BASH_SUBSHELL-0}" = 0 ||
-	error "bug in test script: test_when_finished does nothing in a subshell"
+	BUG "test_when_finished does nothing in a subshell"
 	test_cleanup="{ $*
 		} && (exit \"\$eval_ret\"); eval_ret=\$?; $test_cleanup"
 }
@@ -918,12 +931,13 @@ test_when_finished () {
 # Usage: test_create_repo <directory>
 test_create_repo () {
 	test "$#" = 1 ||
-	error "bug in the test script: not 1 parameter to test-create-repo"
+	BUG "not 1 parameter to test-create-repo"
 	repo="$1"
 	mkdir -p "$repo"
 	(
 		cd "$repo" || error "Cannot setup test environment"
-		"$GIT_EXEC_PATH/git-init" "--template=$GIT_BUILD_DIR/templates/blt/" >&3 2>&4 ||
+		"${GIT_TEST_INSTALLED:-$GIT_EXEC_PATH}/git$X" init \
+			"--template=$GIT_BUILD_DIR/templates/blt/" >&3 2>&4 ||
 		error "cannot run git init -- have you built things yet?"
 		mv .git/hooks .git/hooks-disabled
 	) || exit
@@ -1230,7 +1244,7 @@ test_oid_cache () {
 
 		if ! expr "$k" : '[a-z0-9][a-z0-9]*$' >/dev/null
 		then
-			error 'bug in the test script: bad hash algorithm'
+			BUG 'bad hash algorithm'
 		fi &&
 		eval "test_oid_${k}_$tag=\"\$v\""
 	done
@@ -1245,7 +1259,46 @@ test_oid () {
 	# key-hash pair, so exit with an error.
 	if eval "test -z \"\${$var+set}\""
 	then
-		error "bug in the test script: undefined key '$1'" >&2
+		BUG "undefined key '$1'"
 	fi &&
 	eval "printf '%s' \"\${$var}\""
+}
+
+# Choose a port number based on the test script's number and store it in
+# the given variable name, unless that variable already contains a number.
+test_set_port () {
+	local var=$1 port
+
+	if test $# -ne 1 || test -z "$var"
+	then
+		BUG "test_set_port requires a variable name"
+	fi
+
+	eval port=\$$var
+	case "$port" in
+	"")
+		# No port is set in the given env var, use the test
+		# number as port number instead.
+		# Remove not only the leading 't', but all leading zeros
+		# as well, so the arithmetic below won't (mis)interpret
+		# a test number like '0123' as an octal value.
+		port=${this_test#${this_test%%[1-9]*}}
+		if test "${port:-0}" -lt 1024
+		then
+			# root-only port, use a larger one instead.
+			port=$(($port + 10000))
+		fi
+		;;
+	*[^0-9]*|0*)
+		error >&7 "invalid port number: $port"
+		;;
+	*)
+		# The user has specified the port.
+		;;
+	esac
+
+	# Make sure that parallel '--stress' test jobs get different
+	# ports.
+	port=$(($port + ${GIT_TEST_STRESS_JOB_NR:-0}))
+	eval $var=$port
 }

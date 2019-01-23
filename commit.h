@@ -8,6 +8,7 @@
 #include "gpg-interface.h"
 #include "string-list.h"
 #include "pretty.h"
+#include "commit-slab.h"
 
 #define COMMIT_NOT_FROM_GRAPH 0xFFFFFFFF
 #define GENERATION_NUMBER_INFINITY 0xFFFFFFFF
@@ -332,6 +333,20 @@ extern int remove_signature(struct strbuf *buf);
  * sig->signer and sig->key.
  */
 extern int check_commit_signature(const struct commit *commit, struct signature_check *sigc);
+
+/* record author-date for each commit object */
+struct author_date_slab;
+void record_author_date(struct author_date_slab *author_date,
+			struct commit *commit);
+
+int compare_commits_by_author_date(const void *a_, const void *b_, void *unused);
+
+/*
+ * Verify a single commit with check_commit_signature() and die() if it is not
+ * a good signature. This isn't really suitable for general use, but is a
+ * helper to implement consistent logic for pull/merge --verify-signatures.
+ */
+void verify_merge_signature(struct commit *commit, int verbose);
 
 int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused);
 int compare_commits_by_gen_then_commit_date(const void *a_, const void *b_, void *unused);

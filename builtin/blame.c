@@ -732,6 +732,8 @@ static int blame_copy_callback(const struct option *option, const char *arg, int
 {
 	int *opt = option->value;
 
+	BUG_ON_OPT_NEG(unset);
+
 	/*
 	 * -C enables copy from removed files;
 	 * -C -C enables copy from existing files, but only
@@ -753,6 +755,8 @@ static int blame_copy_callback(const struct option *option, const char *arg, int
 static int blame_move_callback(const struct option *option, const char *arg, int unset)
 {
 	int *opt = option->value;
+
+	BUG_ON_OPT_NEG(unset);
 
 	*opt |= PICKAXE_BLAME_MOVE;
 
@@ -846,6 +850,8 @@ int cmd_blame(int argc, const char **argv, const char *prefix)
 		case PARSE_OPT_HELP:
 		case PARSE_OPT_ERROR:
 			exit(129);
+		case PARSE_OPT_COMPLETE:
+			exit(0);
 		case PARSE_OPT_DONE:
 			if (ctx.argv[0])
 				dashdash_pos = ctx.cpidx;

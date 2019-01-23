@@ -1249,7 +1249,7 @@ test_expect_success 'teardown after ref completion' '
 
 test_path_completion ()
 {
-	test $# = 2 || error "bug in the test script: not 2 parameters to test_path_completion"
+	test $# = 2 || BUG "not 2 parameters to test_path_completion"
 
 	local cur="$1" expected="$2"
 	echo "$expected" >expected &&
@@ -1434,7 +1434,8 @@ test_expect_success 'double dash "git checkout"' '
 	--ignore-other-worktrees Z
 	--recurse-submodules Z
 	--progress Z
-	--no-quiet Z
+	--guess Z
+	--no-guess Z
 	--no-... Z
 	EOF
 '
@@ -1515,8 +1516,8 @@ test_expect_success 'show completes all refs' '
 
 test_expect_success '<ref>: completes paths' '
 	test_completion "git show mytag:f" <<-\EOF
-	file1 Z
-	file2 Z
+	file1Z
+	file2Z
 	EOF
 '
 
@@ -1525,7 +1526,7 @@ test_expect_success 'complete tree filename with spaces' '
 	git add "name with spaces" &&
 	git commit -m spaces &&
 	test_completion "git show HEAD:nam" <<-\EOF
-	name with spaces Z
+	name with spacesZ
 	EOF
 '
 
@@ -1534,12 +1535,12 @@ test_expect_success 'complete tree filename with metacharacters' '
 	git add "name with \${meta}" &&
 	git commit -m meta &&
 	test_completion "git show HEAD:nam" <<-\EOF
-	name with ${meta} Z
-	name with spaces Z
+	name with ${meta}Z
+	name with spacesZ
 	EOF
 '
 
-test_expect_success 'send-email' '
+test_expect_success PERL 'send-email' '
 	test_completion "git send-email --cov" "--cover-letter " &&
 	test_completion "git send-email ma" "master "
 '
@@ -1697,7 +1698,8 @@ test_expect_success 'sourcing the completion script clears cached commands' '
 	verbose test -z "$__git_all_commands"
 '
 
-test_expect_success !GETTEXT_POISON 'sourcing the completion script clears cached merge strategies' '
+test_expect_success 'sourcing the completion script clears cached merge strategies' '
+	GIT_TEST_GETTEXT_POISON= &&
 	__git_compute_merge_strategies &&
 	verbose test -n "$__git_merge_strategies" &&
 	. "$GIT_BUILD_DIR/contrib/completion/git-completion.bash" &&

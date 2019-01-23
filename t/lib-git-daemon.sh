@@ -28,7 +28,7 @@ then
 	test_skip_or_die $GIT_TEST_GIT_DAEMON "file system does not support FIFOs"
 fi
 
-LIB_GIT_DAEMON_PORT=${LIB_GIT_DAEMON_PORT-${this_test#t}}
+test_set_port LIB_GIT_DAEMON_PORT
 
 GIT_DAEMON_PID=
 GIT_DAEMON_DOCUMENT_ROOT_PATH="$PWD"/repo
@@ -54,19 +54,11 @@ start_git_daemon() {
 		"$@" "$GIT_DAEMON_DOCUMENT_ROOT_PATH" \
 		>&3 2>git_daemon_output &
 	GIT_DAEMON_PID=$!
-	>daemon.log
 	{
 		read -r line <&7
-		printf "%s\n" "$line"
-		printf >&4 "%s\n" "$line"
-		(
-			while read -r line <&7
-			do
-				printf "%s\n" "$line"
-				printf >&4 "%s\n" "$line"
-			done
-		) &
-	} 7<git_daemon_output >>"$TRASH_DIRECTORY/daemon.log" &&
+		printf "%s\n" "$line" >&4
+		cat <&7 >&4 &
+	} 7<git_daemon_output &&
 
 	# Check expected output
 	if test x"$(expr "$line" : "\[[0-9]*\] \(.*\)")" != x"Ready to rumble"
@@ -92,7 +84,7 @@ stop_git_daemon() {
 	kill "$GIT_DAEMON_PID"
 	wait "$GIT_DAEMON_PID" >&3 2>&4
 	ret=$?
-	if test_match_signal 15 $?
+	if ! test_match_signal 15 $ret
 	then
 		error "git daemon exited with status: $ret"
 	fi

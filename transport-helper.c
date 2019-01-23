@@ -573,7 +573,7 @@ static int run_connect(struct transport *transport, struct strbuf *cmdbuf)
 			fprintf(stderr, "Debug: Falling back to dumb "
 				"transport.\n");
 	} else {
-		die(_(_("unknown response to connect: %s")),
+		die(_("unknown response to connect: %s"),
 		    cmdbuf->buf);
 	}
 
@@ -1026,7 +1026,8 @@ static int push_refs(struct transport *transport,
 }
 
 
-static int has_attribute(const char *attrs, const char *attr) {
+static int has_attribute(const char *attrs, const char *attr)
+{
 	int len;
 	if (!attrs)
 		return 0;
@@ -1225,9 +1226,8 @@ static int udt_do_read(struct unidirectional_transfer *t)
 		return 0;	/* No space for more. */
 
 	transfer_debug("%s is readable", t->src_name);
-	bytes = read(t->src, t->buf + t->bufuse, BUFFERSIZE - t->bufuse);
-	if (bytes < 0 && errno != EWOULDBLOCK && errno != EAGAIN &&
-		errno != EINTR) {
+	bytes = xread(t->src, t->buf + t->bufuse, BUFFERSIZE - t->bufuse);
+	if (bytes < 0) {
 		error_errno(_("read(%s) failed"), t->src_name);
 		return -1;
 	} else if (bytes == 0) {
@@ -1254,7 +1254,7 @@ static int udt_do_write(struct unidirectional_transfer *t)
 
 	transfer_debug("%s is writable", t->dest_name);
 	bytes = xwrite(t->dest, t->buf, t->bufuse);
-	if (bytes < 0 && errno != EWOULDBLOCK) {
+	if (bytes < 0) {
 		error_errno(_("write(%s) failed"), t->dest_name);
 		return -1;
 	} else if (bytes > 0) {

@@ -657,11 +657,10 @@ struct commit *pop_commit(struct commit_list **stack)
 /* count number of children that have not been emitted */
 define_commit_slab(indegree_slab, int);
 
-/* record author-date for each commit object */
 define_commit_slab(author_date_slab, timestamp_t);
 
-static void record_author_date(struct author_date_slab *author_date,
-			       struct commit *commit)
+void record_author_date(struct author_date_slab *author_date,
+			struct commit *commit)
 {
 	const char *buffer = get_commit_buffer(commit, NULL);
 	struct ident_split ident;
@@ -686,8 +685,8 @@ fail_exit:
 	unuse_commit_buffer(commit, buffer);
 }
 
-static int compare_commits_by_author_date(const void *a_, const void *b_,
-					  void *cb_data)
+int compare_commits_by_author_date(const void *a_, const void *b_,
+				   void *cb_data)
 {
 	const struct commit *a = a_, *b = b_;
 	struct author_date_slab *author_date = cb_data;
@@ -1100,7 +1099,33 @@ int check_commit_signature(const struct commit *commit, struct signature_check *
 	return ret;
 }
 
+void verify_merge_signature(struct commit *commit, int verbosity)
+{
+	char hex[GIT_MAX_HEXSZ + 1];
+	struct signature_check signature_check;
+	memset(&signature_check, 0, sizeof(signature_check));
 
+	check_commit_signature(commit, &signature_check);
+
+	find_unique_abbrev_r(hex, &commit->object.oid, DEFAULT_ABBREV);
+	switch (signature_check.result) {
+	case 'G':
+		break;
+	case 'U':
+		die(_("Commit %s has an untrusted GPG signature, "
+		      "allegedly by %s."), hex, signature_check.signer);
+	case 'B':
+		die(_("Commit %s has a bad GPG signature "
+		      "allegedly by %s."), hex, signature_check.signer);
+	default: /* 'N' */
+		die(_("Commit %s does not have a GPG signature."), hex);
+	}
+	if (verbosity >= 0 && signature_check.result == 'G')
+		printf(_("Commit %s has a good GPG signature by %s\n"),
+		       hex, signature_check.signer);
+
+	signature_check_clear(&signature_check);
+}
 
 void append_merge_tag_headers(struct commit_list *parents,
 			      struct commit_extra_header ***tail)

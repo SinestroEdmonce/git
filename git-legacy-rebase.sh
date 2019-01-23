@@ -337,6 +337,11 @@ do
 		fix|strip)
 			force_rebase=t
 			;;
+		warn|nowarn|error|error-all)
+			;; # okay, known whitespace option
+		*)
+			die "fatal: Invalid whitespace option: '${1#*=}'"
+			;;
 		esac
 		;;
 	--ignore-whitespace)
@@ -351,6 +356,9 @@ do
 	--committer-date-is-author-date|--ignore-date)
 		git_am_opt="$git_am_opt $1"
 		force_rebase=t
+		;;
+	-C*[!0-9]*)
+		die "fatal: switch \`C' expects a numerical value"
 		;;
 	-C*)
 		git_am_opt="$git_am_opt $1"
@@ -710,10 +718,16 @@ if test -n "$diffstat"
 then
 	if test -n "$verbose"
 	then
-		echo "$(eval_gettext "Changes from \$mb to \$onto:")"
+		if test -z "$mb"
+		then
+			echo "$(eval_gettext "Changes to \$onto:")"
+		else
+			echo "$(eval_gettext "Changes from \$mb to \$onto:")"
+		fi
 	fi
+	mb_tree="${mb:-$(git hash-object -t tree /dev/null)}"
 	# We want color (if set), but no pager
-	GIT_PAGER='' git diff --stat --summary "$mb" "$onto"
+	GIT_PAGER='' git diff --stat --summary "$mb_tree" "$onto"
 fi
 
 test -n "$interactive_rebase" && run_specific_rebase

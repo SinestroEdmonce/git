@@ -291,7 +291,7 @@ static int parse_color_moved(const char *arg)
 		return error(_("color moved setting must be one of 'no', 'default', 'blocks', 'zebra', 'dimmed-zebra', 'plain'"));
 }
 
-static int parse_color_moved_ws(const char *arg)
+static unsigned parse_color_moved_ws(const char *arg)
 {
 	int ret = 0;
 	struct string_list l = STRING_LIST_INIT_DUP;
@@ -312,15 +312,19 @@ static int parse_color_moved_ws(const char *arg)
 			ret |= XDF_IGNORE_WHITESPACE;
 		else if (!strcmp(sb.buf, "allow-indentation-change"))
 			ret |= COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE;
-		else
-			error(_("ignoring unknown color-moved-ws mode '%s'"), sb.buf);
+		else {
+			ret |= COLOR_MOVED_WS_ERROR;
+			error(_("unknown color-moved-ws mode '%s', possible values are 'ignore-space-change', 'ignore-space-at-eol', 'ignore-all-space', 'allow-indentation-change'"), sb.buf);
+		}
 
 		strbuf_release(&sb);
 	}
 
 	if ((ret & COLOR_MOVED_WS_ALLOW_INDENTATION_CHANGE) &&
-	    (ret & XDF_WHITESPACE_FLAGS))
-		die(_("color-moved-ws: allow-indentation-change cannot be combined with other white space modes"));
+	    (ret & XDF_WHITESPACE_FLAGS)) {
+		error(_("color-moved-ws: allow-indentation-change cannot be combined with other white space modes"));
+		ret |= COLOR_MOVED_WS_ERROR;
+	}
 
 	string_list_clear(&l, 0);
 
@@ -341,8 +345,8 @@ int git_diff_ui_config(const char *var, const char *value, void *cb)
 		return 0;
 	}
 	if (!strcmp(var, "diff.colormovedws")) {
-		int cm = parse_color_moved_ws(value);
-		if (cm < 0)
+		unsigned cm = parse_color_moved_ws(value);
+		if (cm & COLOR_MOVED_WS_ERROR)
 			return -1;
 		diff_color_moved_ws_default = cm;
 		return 0;
@@ -1637,7 +1641,8 @@ static void emit_hunk_header(struct emit_callback *ecbdata,
 	strbuf_release(&msgbuf);
 }
 
-static struct diff_tempfile *claim_diff_tempfile(void) {
+static struct diff_tempfile *claim_diff_tempfile(void)
+{
 	int i;
 	for (i = 0; i < ARRAY_SIZE(diff_temp); i++)
 		if (!diff_temp[i].name)
@@ -3228,7 +3233,7 @@ static void emit_binary_diff_body(struct diff_options *o,
 	}
 
 	if (delta && delta_size < deflate_size) {
-		char *s = xstrfmt("%lu", orig_size);
+		char *s = xstrfmt("%"PRIuMAX , (uintmax_t)orig_size);
 		emit_diff_symbol(o, DIFF_SYMBOL_BINARY_DIFF_HEADER_DELTA,
 				 s, strlen(s), 0);
 		free(s);
@@ -3313,14 +3318,14 @@ void diff_set_mnemonic_prefix(struct diff_options *options, const char *a, const
 		options->b_prefix = b;
 }
 
-struct userdiff_driver *get_textconv(struct index_state *istate,
+struct userdiff_driver *get_textconv(struct repository *r,
 				     struct diff_filespec *one)
 {
 	if (!DIFF_FILE_VALID(one))
 		return NULL;
 
-	diff_filespec_load_driver(one, istate);
-	return userdiff_get_textconv(one->driver);
+	diff_filespec_load_driver(one, r->index);
+	return userdiff_get_textconv(r, one->driver);
 }
 
 static void builtin_diff(const char *name_a,
@@ -3369,8 +3374,8 @@ static void builtin_diff(const char *name_a,
 	}
 
 	if (o->flags.allow_textconv) {
-		textconv_one = get_textconv(o->repo->index, one);
-		textconv_two = get_textconv(o->repo->index, two);
+		textconv_one = get_textconv(o->repo, one);
+		textconv_two = get_textconv(o->repo, two);
 	}
 
 	/* Never use a non-valid filename anywhere if at all possible */
@@ -4819,7 +4824,8 @@ static int parse_diff_filter_opt(const char *optarg, struct diff_options *opt)
 	return 0;
 }
 
-static void enable_patch_output(int *fmt) {
+static void enable_patch_output(int *fmt)
+{
 	*fmt &= ~DIFF_FORMAT_NO_OUTPUT;
 	*fmt |= DIFF_FORMAT_PATCH;
 }
@@ -5034,10 +5040,13 @@ int diff_opt_parse(struct diff_options *options,
 	else if (skip_prefix(arg, "--color-moved=", &arg)) {
 		int cm = parse_color_moved(arg);
 		if (cm < 0)
-			die("bad --color-moved argument: %s", arg);
+			return error("bad --color-moved argument: %s", arg);
 		options->color_moved = cm;
 	} else if (skip_prefix(arg, "--color-moved-ws=", &arg)) {
-		options->color_moved_ws_handling = parse_color_moved_ws(arg);
+		unsigned cm = parse_color_moved_ws(arg);
+		if (cm & COLOR_MOVED_WS_ERROR)
+			return -1;
+		options->color_moved_ws_handling = cm;
 	} else if (skip_to_optional_arg_default(arg, "--color-words", &options->word_regex, NULL)) {
 		options->use_color = 1;
 		options->word_diff = DIFF_WORDS_COLOR;
@@ -6434,7 +6443,7 @@ int textconv_object(struct repository *r,
 
 	df = alloc_filespec(path);
 	fill_filespec(df, oid, oid_valid, mode);
-	textconv = get_textconv(r->index, df);
+	textconv = get_textconv(r, df);
 	if (!textconv) {
 		free_filespec(df);
 		return 0;

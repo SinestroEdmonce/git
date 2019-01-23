@@ -1668,6 +1668,8 @@ static int do_git_config_sequence(const struct config_options *opts,
 
 	if (opts->commondir)
 		repo_config = mkpathdup("%s/config", opts->commondir);
+	else if (opts->git_dir)
+		BUG("git_dir without commondir");
 	else
 		repo_config = NULL;
 
@@ -2292,22 +2294,25 @@ int git_config_get_fsmonitor(void)
 	return 0;
 }
 
-int git_config_get_index_threads(void)
+int git_config_get_index_threads(int *dest)
 {
-	int is_bool, val = 0;
+	int is_bool, val;
 
 	val = git_env_ulong("GIT_TEST_INDEX_THREADS", 0);
-	if (val)
-		return val;
+	if (val) {
+		*dest = val;
+		return 0;
+	}
 
 	if (!git_config_get_bool_or_int("index.threads", &is_bool, &val)) {
 		if (is_bool)
-			return val ? 0 : 1;
+			*dest = val ? 0 : 1;
 		else
-			return val;
+			*dest = val;
+		return 0;
 	}
 
-	return 0; /* auto */
+	return 1;
 }
 
 NORETURN

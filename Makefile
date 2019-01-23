@@ -59,6 +59,13 @@ all::
 # Define CURL_CONFIG to curl's configuration program that prints information
 # about the library (e.g., its version number).  The default is 'curl-config'.
 #
+# Define CURL_LDFLAGS to specify flags that you need to link when using libcurl,
+# if you do not want to rely on the libraries provided by CURL_CONFIG.  The
+# default value is a result of `curl-config --libs`.  An example value for
+# CURL_LDFLAGS is as follows:
+#
+#     CURL_LDFLAGS=-lcurl
+#
 # Define NO_EXPAT if you do not have expat installed.  git-http-push is
 # not built, and you cannot push using http:// and https:// transports (dumb).
 #
@@ -183,10 +190,6 @@ all::
 #
 # Define NEEDS_SSL_WITH_CRYPTO if you need -lssl when using -lcrypto (Darwin).
 #
-# Define NEEDS_SSL_WITH_CURL if you need -lssl with -lcurl (Minix).
-#
-# Define NEEDS_IDN_WITH_CURL if you need -lidn when using -lcurl (Minix).
-#
 # Define NEEDS_LIBICONV if linking with libc is not enough (Darwin).
 #
 # Define NEEDS_LIBINTL_BEFORE_LIBICONV if you need libintl before libiconv.
@@ -207,10 +210,12 @@ all::
 # Define MMAP_PREVENTS_DELETE if a file that is currently mmapped cannot be
 # deleted or cannot be replaced using rename().
 #
+# Define NO_POLL_H if you don't have poll.h.
+#
 # Define NO_SYS_POLL_H if you don't have sys/poll.h.
 #
 # Define NO_POLL if you do not have or don't want to use poll().
-# This also implies NO_SYS_POLL_H.
+# This also implies NO_POLL_H and NO_SYS_POLL_H.
 #
 # Define NEEDS_SYS_PARAM_H if you need to include sys/param.h to compile,
 # *PLEASE* REPORT to git@vger.kernel.org if your platform needs this;
@@ -361,11 +366,6 @@ all::
 #
 # Define HAVE_DEV_TTY if your system can open /dev/tty to interact with the
 # user.
-#
-# Define GETTEXT_POISON if you are debugging the choice of strings marked
-# for translation.  In a GETTEXT_POISON build, you can turn all strings marked
-# for translation into gibberish by setting the GIT_GETTEXT_POISON variable
-# (to any value) in your environment.
 #
 # Define JSMIN to point to JavaScript minifier that functions as
 # a filter to have gitweb.js minified.
@@ -993,6 +993,7 @@ LIB_OBJS += sub-process.o
 LIB_OBJS += symlinks.o
 LIB_OBJS += tag.o
 LIB_OBJS += tempfile.o
+LIB_OBJS += thread-utils.o
 LIB_OBJS += tmp-objdir.o
 LIB_OBJS += trace.o
 LIB_OBJS += trailer.o
@@ -1308,19 +1309,16 @@ else
 	ifdef CURLDIR
 		# Try "-Wl,-rpath=$(CURLDIR)/$(lib)" in such a case.
 		BASIC_CFLAGS += -I$(CURLDIR)/include
-		CURL_LIBCURL = -L$(CURLDIR)/$(lib) $(CC_LD_DYNPATH)$(CURLDIR)/$(lib) -lcurl
+		CURL_LIBCURL = -L$(CURLDIR)/$(lib) $(CC_LD_DYNPATH)$(CURLDIR)/$(lib)
 	else
-		CURL_LIBCURL = -lcurl
+		CURL_LIBCURL =
 	endif
-	ifdef NEEDS_SSL_WITH_CURL
-		CURL_LIBCURL += -lssl
-		ifdef NEEDS_CRYPTO_WITH_SSL
-			CURL_LIBCURL += -lcrypto
-		endif
-	endif
-	ifdef NEEDS_IDN_WITH_CURL
-		CURL_LIBCURL += -lidn
-	endif
+
+ifdef CURL_LDFLAGS
+	CURL_LIBCURL += $(CURL_LDFLAGS)
+else
+	CURL_LIBCURL += $(shell $(CURL_CONFIG) --libs)
+endif
 
 	REMOTE_CURL_PRIMARY = git-remote-http$X
 	REMOTE_CURL_ALIASES = git-remote-https$X git-remote-ftp$X git-remote-ftps$X
@@ -1453,13 +1451,14 @@ ifdef NO_SYMLINK_HEAD
 	BASIC_CFLAGS += -DNO_SYMLINK_HEAD
 endif
 ifdef GETTEXT_POISON
-	BASIC_CFLAGS += -DGETTEXT_POISON
+$(warning The GETTEXT_POISON option has been removed in favor of runtime GIT_TEST_GETTEXT_POISON. See t/README!)
 endif
 ifdef NO_GETTEXT
 	BASIC_CFLAGS += -DNO_GETTEXT
 	USE_GETTEXT_SCHEME ?= fallthrough
 endif
 ifdef NO_POLL
+	NO_POLL_H = YesPlease
 	NO_SYS_POLL_H = YesPlease
 	COMPAT_CFLAGS += -DNO_POLL -Icompat/poll
 	COMPAT_OBJS += compat/poll/poll.o
@@ -1497,6 +1496,9 @@ ifdef NO_UNSETENV
 endif
 ifdef NO_SYS_SELECT_H
 	BASIC_CFLAGS += -DNO_SYS_SELECT_H
+endif
+ifdef NO_POLL_H
+	BASIC_CFLAGS += -DNO_POLL_H
 endif
 ifdef NO_SYS_POLL_H
 	BASIC_CFLAGS += -DNO_SYS_POLL_H
@@ -1677,7 +1679,6 @@ ifdef NO_PTHREADS
 else
 	BASIC_CFLAGS += $(PTHREAD_CFLAGS)
 	EXTLIBS += $(PTHREAD_LIBS)
-	LIB_OBJS += thread-utils.o
 endif
 
 ifdef HAVE_PATHS_H
@@ -2111,7 +2112,7 @@ $(SCRIPT_LIB) : % : %.sh GIT-SCRIPT-DEFINES
 	$(QUIET_GEN)$(cmd_munge_script) && \
 	mv $@+ $@
 
-git.res: git.rc GIT-VERSION-FILE
+git.res: git.rc GIT-VERSION-FILE GIT-PREFIX
 	$(QUIET_RC)$(RC) \
 	  $(join -DMAJOR= -DMINOR= -DMICRO= -DPATCHLEVEL=, $(wordlist 1, 4, \
 	    $(shell echo $(GIT_VERSION) 0 0 0 0 | tr '.a-zA-Z-' ' '))) \
@@ -2591,6 +2592,7 @@ GIT-BUILD-OPTIONS: FORCE
 	@echo NO_UNIX_SOCKETS=\''$(subst ','\'',$(subst ','\'',$(NO_UNIX_SOCKETS)))'\' >>$@+
 	@echo PAGER_ENV=\''$(subst ','\'',$(subst ','\'',$(PAGER_ENV)))'\' >>$@+
 	@echo DC_SHA1=\''$(subst ','\'',$(subst ','\'',$(DC_SHA1)))'\' >>$@+
+	@echo X=\'$(X)\' >>$@+
 ifdef TEST_OUTPUT_DIRECTORY
 	@echo TEST_OUTPUT_DIRECTORY=\''$(subst ','\'',$(subst ','\'',$(TEST_OUTPUT_DIRECTORY)))'\' >>$@+
 endif
@@ -2604,7 +2606,6 @@ ifdef GIT_TEST_CMP_USE_COPIED_CONTEXT
 	@echo GIT_TEST_CMP_USE_COPIED_CONTEXT=YesPlease >>$@+
 endif
 	@echo NO_GETTEXT=\''$(subst ','\'',$(subst ','\'',$(NO_GETTEXT)))'\' >>$@+
-	@echo GETTEXT_POISON=\''$(subst ','\'',$(subst ','\'',$(GETTEXT_POISON)))'\' >>$@+
 ifdef GIT_PERF_REPEAT_COUNT
 	@echo GIT_PERF_REPEAT_COUNT=\''$(subst ','\'',$(subst ','\'',$(GIT_PERF_REPEAT_COUNT)))'\' >>$@+
 endif
@@ -2741,9 +2742,12 @@ endif
 	then \
 		echo '    ' SPATCH result: $@; \
 	fi
-coccicheck: $(addsuffix .patch,$(wildcard contrib/coccinelle/*.cocci))
+coccicheck: $(addsuffix .patch,$(filter-out %.pending.cocci,$(wildcard contrib/coccinelle/*.cocci)))
 
-.PHONY: coccicheck
+# See contrib/coccinelle/README
+coccicheck-pending: $(addsuffix .patch,$(wildcard contrib/coccinelle/*.pending.cocci))
+
+.PHONY: coccicheck coccicheck-pending
 
 ### Installation rules
 
@@ -3099,14 +3103,16 @@ cover_db_html: cover_db
 # An example command to build against libFuzzer from LLVM 4.0.0:
 #
 # make CC=clang CXX=clang++ \
-#      CFLAGS="-fsanitize-coverage=trace-pc-guard -fsanitize=address" \
+#      FUZZ_CXXFLAGS="-fsanitize-coverage=trace-pc-guard -fsanitize=address" \
 #      LIB_FUZZING_ENGINE=/usr/lib/llvm-4.0/lib/libFuzzer.a \
 #      fuzz-all
 #
+FUZZ_CXXFLAGS ?= $(CFLAGS)
+
 .PHONY: fuzz-all
 
 $(FUZZ_PROGRAMS): all
-	$(QUIET_LINK)$(CXX) $(CFLAGS) $(LIB_OBJS) $(BUILTIN_OBJS) \
+	$(QUIET_LINK)$(CXX) $(FUZZ_CXXFLAGS) $(LIB_OBJS) $(BUILTIN_OBJS) \
 		$(XDIFF_OBJS) $(EXTLIBS) git.o $@.o $(LIB_FUZZING_ENGINE) -o $@
 
 fuzz-all: $(FUZZ_PROGRAMS)

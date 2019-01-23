@@ -161,6 +161,9 @@ static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 static int opt_parse_rename_score(const struct option *opt, const char *arg, int unset)
 {
 	const char **value = opt->value;
+
+	BUG_ON_OPT_NEG(unset);
+
 	if (arg != NULL && *arg == '=')
 		arg = arg + 1;
 
@@ -185,7 +188,7 @@ static void determine_whence(struct wt_status *s)
 
 static void status_init_config(struct wt_status *s, config_fn_t fn)
 {
-	wt_status_prepare(s);
+	wt_status_prepare(the_repository, s);
 	init_diff_ui_defaults();
 	git_config(fn, s);
 	determine_whence(s);
@@ -908,7 +911,8 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 			if (ignore_submodule_arg &&
 			    !strcmp(ignore_submodule_arg, "all"))
 				flags.ignore_submodules = 1;
-			committable = index_differs_from(parent, &flags, 1);
+			committable = index_differs_from(the_repository,
+							 parent, &flags, 1);
 		}
 	}
 	strbuf_release(&committer_ident);
@@ -1335,7 +1339,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 		OPT_BOOL(0, "no-renames", &no_renames, N_("do not detect renames")),
 		{ OPTION_CALLBACK, 'M', "find-renames", &rename_score_arg,
 		  N_("n"), N_("detect renames, optionally set similarity index"),
-		  PARSE_OPT_OPTARG, opt_parse_rename_score },
+		  PARSE_OPT_OPTARG | PARSE_OPT_NONEG, opt_parse_rename_score },
 		OPT_END(),
 	};
 
@@ -1679,7 +1683,8 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 			flags |= SUMMARY_INITIAL_COMMIT;
 		if (author_date_is_interesting())
 			flags |= SUMMARY_SHOW_AUTHOR_DATE;
-		print_commit_summary(prefix, &oid, flags);
+		print_commit_summary(the_repository, prefix,
+				     &oid, flags);
 	}
 
 	UNLEAK(err);

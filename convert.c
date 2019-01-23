@@ -705,7 +705,7 @@ static int filter_buffer_or_fd(int in, int out, void *data)
 }
 
 static int apply_single_file_filter(const char *path, const char *src, size_t len, int fd,
-                        struct strbuf *dst, const char *cmd)
+				    struct strbuf *dst, const char *cmd)
 {
 	/*
 	 * Create a pipeline to have the command filter the buffer's
@@ -778,7 +778,8 @@ static int start_multi_file_filter_fn(struct subprocess_entry *subprocess)
 
 static void handle_filter_error(const struct strbuf *filter_status,
 				struct cmd2process *entry,
-				const unsigned int wanted_capability) {
+				const unsigned int wanted_capability)
+{
 	if (!strcmp(filter_status->buf, "error"))
 		; /* The filter signaled a problem with the file. */
 	else if (!strcmp(filter_status->buf, "abort") && wanted_capability) {
@@ -1091,7 +1092,7 @@ static int count_ident(const char *cp, unsigned long size)
 }
 
 static int ident_to_git(const char *path, const char *src, size_t len,
-                        struct strbuf *buf, int ident)
+			struct strbuf *buf, int ident)
 {
 	char *dst, *dollar;
 
@@ -1135,7 +1136,7 @@ static int ident_to_git(const char *path, const char *src, size_t len,
 }
 
 static int ident_to_worktree(const char *path, const char *src, size_t len,
-                             struct strbuf *buf, int ident)
+			     struct strbuf *buf, int ident)
 {
 	struct object_id oid;
 	char *to_free = NULL, *dollar, *spc;
