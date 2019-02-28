@@ -154,19 +154,28 @@ void raw_object_store_clear(struct raw_object_store *o);
 
 /*
  * Put in `buf` the name of the file in the local object database that
- * would be used to store a loose object with the specified sha1.
+ * would be used to store a loose object with the specified oid.
  */
-const char *loose_object_path(struct repository *r, struct strbuf *buf, const unsigned char *sha1);
+const char *loose_object_path(struct repository *r, struct strbuf *buf,
+			      const struct object_id *oid);
 
-void *map_sha1_file(struct repository *r, const unsigned char *sha1, unsigned long *size);
+void *map_loose_object(struct repository *r, const struct object_id *oid,
+		       unsigned long *size);
 
-extern void *read_object_file_extended(const struct object_id *oid,
+extern void *read_object_file_extended(struct repository *r,
+				       const struct object_id *oid,
 				       enum object_type *type,
 				       unsigned long *size, int lookup_replace);
-static inline void *read_object_file(const struct object_id *oid, enum object_type *type, unsigned long *size)
+static inline void *repo_read_object_file(struct repository *r,
+					  const struct object_id *oid,
+					  enum object_type *type,
+					  unsigned long *size)
 {
-	return read_object_file_extended(oid, type, size, 1);
+	return read_object_file_extended(r, oid, type, size, 1);
 }
+#ifndef NO_THE_REPOSITORY_COMPATIBILITY_MACROS
+#define read_object_file(oid, type, size) repo_read_object_file(the_repository, oid, type, size)
+#endif
 
 /* Read and unpack an object file into memory, write memory to an object file */
 int oid_object_info(struct repository *r, const struct object_id *, unsigned long *);
@@ -199,20 +208,19 @@ int read_loose_object(const char *path,
 		      unsigned long *size,
 		      void **contents);
 
-/*
- * Convenience for sha1_object_info_extended() with a NULL struct
- * object_info. OBJECT_INFO_SKIP_CACHED is automatically set; pass
- * nonzero flags to also set other flags.
- */
-extern int has_sha1_file_with_flags(const unsigned char *sha1, int flags);
-static inline int has_sha1_file(const unsigned char *sha1)
-{
-	return has_sha1_file_with_flags(sha1, 0);
-}
+#ifndef NO_THE_REPOSITORY_COMPATIBILITY_MACROS
+#define has_sha1_file_with_flags(sha1, flags) repo_has_sha1_file_with_flags(the_repository, sha1, flags)
+#define has_sha1_file(sha1) repo_has_sha1_file(the_repository, sha1)
+#endif
 
 /* Same as the above, except for struct object_id. */
-extern int has_object_file(const struct object_id *oid);
-extern int has_object_file_with_flags(const struct object_id *oid, int flags);
+int repo_has_object_file(struct repository *r, const struct object_id *oid);
+int repo_has_object_file_with_flags(struct repository *r,
+				    const struct object_id *oid, int flags);
+#ifndef NO_THE_REPOSITORY_COMPATIBILITY_MACROS
+#define has_object_file(oid) repo_has_object_file(the_repository, oid)
+#define has_object_file_with_flags(oid, flags) repo_has_object_file_with_flags(the_repository, oid, flags)
+#endif
 
 /*
  * Return true iff an alternate object database has a loose object

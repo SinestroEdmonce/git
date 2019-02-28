@@ -164,8 +164,9 @@ void *object_as_type(struct repository *r, struct object *obj, enum object_type 
 		return obj;
 	else if (obj->type == OBJ_NONE) {
 		if (type == OBJ_COMMIT)
-			((struct commit *)obj)->index = alloc_commit_index(r);
-		obj->type = type;
+			init_commit_node(r, (struct commit *) obj);
+		else
+			obj->type = type;
 		return obj;
 	}
 	else {
@@ -259,22 +260,22 @@ struct object *parse_object(struct repository *r, const struct object_id *oid)
 	if (obj && obj->parsed)
 		return obj;
 
-	if ((obj && obj->type == OBJ_BLOB && has_object_file(oid)) ||
-	    (!obj && has_object_file(oid) &&
+	if ((obj && obj->type == OBJ_BLOB && repo_has_object_file(r, oid)) ||
+	    (!obj && repo_has_object_file(r, oid) &&
 	     oid_object_info(r, oid, NULL) == OBJ_BLOB)) {
 		if (check_object_signature(repl, NULL, 0, NULL) < 0) {
-			error(_("sha1 mismatch %s"), oid_to_hex(oid));
+			error(_("hash mismatch %s"), oid_to_hex(oid));
 			return NULL;
 		}
 		parse_blob_buffer(lookup_blob(r, oid), NULL, 0);
 		return lookup_object(r, oid->hash);
 	}
 
-	buffer = read_object_file(oid, &type, &size);
+	buffer = repo_read_object_file(r, oid, &type, &size);
 	if (buffer) {
 		if (check_object_signature(repl, buffer, size, type_name(type)) < 0) {
 			free(buffer);
-			error(_("sha1 mismatch %s"), oid_to_hex(repl));
+			error(_("hash mismatch %s"), oid_to_hex(repl));
 			return NULL;
 		}
 
@@ -540,7 +541,7 @@ void parsed_object_pool_clear(struct parsed_object_pool *o)
 		if (obj->type == OBJ_TREE)
 			free_tree_buffer((struct tree*)obj);
 		else if (obj->type == OBJ_COMMIT)
-			release_commit_memory((struct commit*)obj);
+			release_commit_memory(o, (struct commit*)obj);
 		else if (obj->type == OBJ_TAG)
 			release_tag_memory((struct tag*)obj);
 	}
@@ -556,9 +557,11 @@ void parsed_object_pool_clear(struct parsed_object_pool *o)
 	clear_alloc_state(o->commit_state);
 	clear_alloc_state(o->tag_state);
 	clear_alloc_state(o->object_state);
+	stat_validity_clear(o->shallow_stat);
 	FREE_AND_NULL(o->blob_state);
 	FREE_AND_NULL(o->tree_state);
 	FREE_AND_NULL(o->commit_state);
 	FREE_AND_NULL(o->tag_state);
 	FREE_AND_NULL(o->object_state);
+	FREE_AND_NULL(o->shallow_stat);
 }

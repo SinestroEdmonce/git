@@ -40,6 +40,8 @@ struct replay_opts {
 	int allow_empty_message;
 	int keep_redundant_commits;
 	int verbose;
+	int quiet;
+	int reschedule_failed_exec;
 
 	int mainline;
 
@@ -105,8 +107,6 @@ int complete_action(struct repository *r, struct replay_opts *opts, unsigned fla
 		    unsigned autosquash);
 int rearrange_squash(struct repository *r);
 
-extern const char sign_off_header[];
-
 /*
  * Append a signoff to the commit message in "msgbuf". The ignore_footer
  * parameter specifies the number of bytes at the end of msgbuf that should
@@ -124,7 +124,8 @@ int update_head_with_reflog(const struct commit *old_head,
 			    const struct object_id *new_head,
 			    const char *action, const struct strbuf *msg,
 			    struct strbuf *err);
-void commit_post_rewrite(const struct commit *current_head,
+void commit_post_rewrite(struct repository *r,
+			 const struct commit *current_head,
 			 const struct object_id *new_head);
 
 int prepare_branch_to_be_rebased(struct replay_opts *opts, const char *commit);

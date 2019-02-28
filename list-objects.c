@@ -124,15 +124,15 @@ static void process_tree_contents(struct traversal_context *ctx,
 		}
 
 		if (S_ISDIR(entry.mode)) {
-			struct tree *t = lookup_tree(ctx->revs->repo, entry.oid);
+			struct tree *t = lookup_tree(ctx->revs->repo, &entry.oid);
 			t->object.flags |= NOT_USER_GIVEN;
 			process_tree(ctx, t, base, entry.path);
 		}
 		else if (S_ISGITLINK(entry.mode))
-			process_gitlink(ctx, entry.oid->hash,
+			process_gitlink(ctx, entry.oid.hash,
 					base, entry.path);
 		else {
-			struct blob *b = lookup_blob(ctx->revs->repo, entry.oid);
+			struct blob *b = lookup_blob(ctx->revs->repo, &entry.oid);
 			b->object.flags |= NOT_USER_GIVEN;
 			process_blob(ctx, b, base, entry.path);
 		}
@@ -226,25 +226,73 @@ static void mark_edge_parents_uninteresting(struct commit *commit,
 	}
 }
 
-void mark_edges_uninteresting(struct rev_info *revs, show_edge_fn show_edge)
+static void add_edge_parents(struct commit *commit,
+			     struct rev_info *revs,
+			     show_edge_fn show_edge,
+			     struct oidset *set)
+{
+	struct commit_list *parents;
+
+	for (parents = commit->parents; parents; parents = parents->next) {
+		struct commit *parent = parents->item;
+		struct tree *tree = get_commit_tree(parent);
+
+		if (!tree)
+			continue;
+
+		oidset_insert(set, &tree->object.oid);
+
+		if (!(parent->object.flags & UNINTERESTING))
+			continue;
+		tree->object.flags |= UNINTERESTING;
+
+		if (revs->edge_hint && !(parent->object.flags & SHOWN)) {
+			parent->object.flags |= SHOWN;
+			show_edge(parent);
+		}
+	}
+}
+
+void mark_edges_uninteresting(struct rev_info *revs,
+			      show_edge_fn show_edge,
+			      int sparse)
 {
 	struct commit_list *list;
 	int i;
 
-	for (list = revs->commits; list; list = list->next) {
-		struct commit *commit = list->item;
+	if (sparse) {
+		struct oidset set;
+		oidset_init(&set, 16);
 
-		if (commit->object.flags & UNINTERESTING) {
-			mark_tree_uninteresting(revs->repo,
-						get_commit_tree(commit));
-			if (revs->edge_hint_aggressive && !(commit->object.flags & SHOWN)) {
-				commit->object.flags |= SHOWN;
-				show_edge(commit);
-			}
-			continue;
+		for (list = revs->commits; list; list = list->next) {
+			struct commit *commit = list->item;
+			struct tree *tree = get_commit_tree(commit);
+
+			if (commit->object.flags & UNINTERESTING)
+				tree->object.flags |= UNINTERESTING;
+
+			oidset_insert(&set, &tree->object.oid);
+			add_edge_parents(commit, revs, show_edge, &set);
 		}
-		mark_edge_parents_uninteresting(commit, revs, show_edge);
+
+		mark_trees_uninteresting_sparse(revs->repo, &set);
+		oidset_clear(&set);
+	} else {
+		for (list = revs->commits; list; list = list->next) {
+			struct commit *commit = list->item;
+			if (commit->object.flags & UNINTERESTING) {
+				mark_tree_uninteresting(revs->repo,
+							get_commit_tree(commit));
+				if (revs->edge_hint_aggressive && !(commit->object.flags & SHOWN)) {
+					commit->object.flags |= SHOWN;
+					show_edge(commit);
+				}
+				continue;
+			}
+			mark_edge_parents_uninteresting(commit, revs, show_edge);
+		}
 	}
+
 	if (revs->edge_hint_aggressive) {
 		for (i = 0; i < revs->cmdline.nr; i++) {
 			struct object *obj = revs->cmdline.rev[i].item;

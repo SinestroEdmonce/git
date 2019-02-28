@@ -1876,8 +1876,6 @@ static int http_request(const char *url,
 	strbuf_addstr(&buf, "Pragma:");
 	if (options && options->no_cache)
 		strbuf_addstr(&buf, " no-cache");
-	if (options && options->keep_error)
-		curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 0);
 	if (options && options->initial_request &&
 	    http_follow_config == HTTP_FOLLOW_INITIAL)
 		curl_easy_setopt(slot->curl, CURLOPT_FOLLOWLOCATION, 1);
@@ -1895,6 +1893,7 @@ static int http_request(const char *url,
 	curl_easy_setopt(slot->curl, CURLOPT_URL, url);
 	curl_easy_setopt(slot->curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(slot->curl, CURLOPT_ENCODING, "");
+	curl_easy_setopt(slot->curl, CURLOPT_FAILONERROR, 0);
 
 	ret = run_one_slot(slot, &results);
 
@@ -1989,19 +1988,26 @@ static int http_request_reauth(const char *url,
 		return ret;
 
 	/*
-	 * If we are using KEEP_ERROR, the previous request may have
-	 * put cruft into our output stream; we should clear it out before
-	 * making our next request. We only know how to do this for
-	 * the strbuf case, but that is enough to satisfy current callers.
+	 * The previous request may have put cruft into our output stream; we
+	 * should clear it out before making our next request.
 	 */
-	if (options && options->keep_error) {
-		switch (target) {
-		case HTTP_REQUEST_STRBUF:
-			strbuf_reset(result);
-			break;
-		default:
-			BUG("HTTP_KEEP_ERROR is only supported with strbufs");
+	switch (target) {
+	case HTTP_REQUEST_STRBUF:
+		strbuf_reset(result);
+		break;
+	case HTTP_REQUEST_FILE:
+		if (fflush(result)) {
+			error_errno("unable to flush a file");
+			return HTTP_START_FAILED;
 		}
+		rewind(result);
+		if (ftruncate(fileno(result), 0) < 0) {
+			error_errno("unable to truncate a file");
+			return HTTP_START_FAILED;
+		}
+		break;
+	default:
+		BUG("Unknown http_request target");
 	}
 
 	credential_fill(&http_auth);
@@ -2337,9 +2343,9 @@ static size_t fwrite_sha1_file(char *ptr, size_t eltsize, size_t nmemb,
 }
 
 struct http_object_request *new_http_object_request(const char *base_url,
-	unsigned char *sha1)
+						    const struct object_id *oid)
 {
-	char *hex = sha1_to_hex(sha1);
+	char *hex = oid_to_hex(oid);
 	struct strbuf filename = STRBUF_INIT;
 	struct strbuf prevfile = STRBUF_INIT;
 	int prevlocal;
@@ -2350,10 +2356,10 @@ struct http_object_request *new_http_object_request(const char *base_url,
 
 	freq = xcalloc(1, sizeof(*freq));
 	strbuf_init(&freq->tmpfile, 0);
-	hashcpy(freq->sha1, sha1);
+	oidcpy(&freq->oid, oid);
 	freq->localfile = -1;
 
-	loose_object_path(the_repository, &filename, sha1);
+	loose_object_path(the_repository, &filename, oid);
 	strbuf_addf(&freq->tmpfile, "%s.temp", filename.buf);
 
 	strbuf_addf(&prevfile, "%s.prev", filename.buf);
@@ -2495,16 +2501,16 @@ int finish_http_object_request(struct http_object_request *freq)
 	}
 
 	git_inflate_end(&freq->stream);
-	git_SHA1_Final(freq->real_sha1, &freq->c);
+	git_SHA1_Final(freq->real_oid.hash, &freq->c);
 	if (freq->zret != Z_STREAM_END) {
 		unlink_or_warn(freq->tmpfile.buf);
 		return -1;
 	}
-	if (!hasheq(freq->sha1, freq->real_sha1)) {
+	if (!oideq(&freq->oid, &freq->real_oid)) {
 		unlink_or_warn(freq->tmpfile.buf);
 		return -1;
 	}
-	loose_object_path(the_repository, &filename, freq->sha1);
+	loose_object_path(the_repository, &filename, &freq->oid);
 	freq->rename = finalize_object_file(freq->tmpfile.buf, filename.buf);
 	strbuf_release(&filename);
 
